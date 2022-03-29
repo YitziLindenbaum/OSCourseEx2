@@ -2,6 +2,6 @@
 #define EX2_LIBRARY_H
 
 void hello();
-//Hi Elay
+//Hi Yitzi
 
 #endif //EX2_LIBRARY_H
