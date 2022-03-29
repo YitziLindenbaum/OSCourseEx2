@@ -1,0 +1,33 @@
+chucklind,elayahroni
+
+
+
+QUESTIONS:
+1. User-level threads are useful when the user wants to impose a particular
+order on the handling of the threads. For this, user-level threads are the best option because
+kernel-level threads are scheduled by the OS and not by the user (and simply using
+processes would obviously have more overhead).
+
+2. Advantages: the strict separation of different processes' data (heap, memory, files) ensures
+that the processes will not corrupt each other or gain access to protected data.
+Disadvantages: creating a new process and switching between different processes has significantly
+more overhead than that of threads. In addition, communication between distinct processes requires
+the intervention of the operating system, unlike in kernel-level threads where the threads can perform
+basic communication directly. Finally, since processes do not share memory, using multiple processes
+is wasteful in terms of space.
+
+3. While we typed the command, the keyboard sent an interrupt to the OS and required that the letters
+we typed would appear onscreen in the shell. When we pressed enter, the keyboard sent an interrupt to the OS
+which was handled by informing the shell that enter was pressed, and the shell then executes the command. It sends
+a system call to the OS, requesting that it send SIGTERM to the process whose ID we specified. The OS did so, and
+the application handled the signal SIGTERM by terminating itself (the default behavior).
+
+4. Virtual time is the amount of time that a process takes in theory -- without the interrupts and such that
+occur in real life. This is what we are calculating when we say, for example, that searching a hashmap takes O(1)
+times. Real time is the actual time that the processor took to execute a command, or a series of commands. For example,
+in Ex 1 when we calculated the amount of time that it takes to execute an empty function (in theory O(0) = 0), we were
+calculating real time.
+
+5. sigsetjmp saves the context of a thread in a sigjmp_buf struct -- the program counter, stack pointer, registers, and
+(optionally) the relevant signal masks.
+siglongjmp loads the context of the sigjmp_buf given as a parameter (assumed to be saved previously using sigsetjmp).

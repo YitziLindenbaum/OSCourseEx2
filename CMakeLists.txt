@@ -3,4 +3,4 @@ project(Ex2)
 
 set(CMAKE_CXX_STANDARD 11)
 
-add_library(Ex2 library.cpp)
+add_library(Ex2 library.cpp uthreads.h demo_itimer.c demo_jmp.c demo_singInt_handler.c)
