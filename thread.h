@@ -5,6 +5,8 @@
 #ifndef EX2_THREAD_H
 #define EX2_THREAD_H
 
+#include <setjmp.h>;
+
 enum State {READY, RUNNING, BLOCKED};
 
 class Thread {
@@ -12,7 +14,7 @@ private:
     unsigned int id;
     thread_entry_point entry_point;
     State state;
-    unsigned int sp;
+    jmp_buf env;
 
 public:
 
