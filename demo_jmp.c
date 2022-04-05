@@ -76,7 +76,7 @@ void jump_to_thread(int tid)
  */
 void yield(void)
 {
-    int ret_val = __sigsetjmp(env[current_thread], 1);
+    int ret_val = sigsetjmp(env[current_thread], 1);
     printf("yield: ret_val=%d\n", ret_val);
     bool did_just_save_bookmark = ret_val == 0;
 //    bool did_jump_from_another_thread = ret_val != 0;
@@ -127,7 +127,7 @@ void setup_thread(int tid, char *stack, thread_entry_point entry_point)
     // siglongjmp to jump into the thread.
     address_t sp = (address_t) stack + STACK_SIZE - sizeof(address_t);
     address_t pc = (address_t) entry_point;
-    __sigsetjmp(env[tid], 1);
+    sigsetjmp(env[tid], 1);
     (env[tid]->__jmpbuf)[JB_SP] = translate_address(sp);
     (env[tid]->__jmpbuf)[JB_PC] = translate_address(pc);
     sigemptyset(&env[tid]->__saved_mask);
