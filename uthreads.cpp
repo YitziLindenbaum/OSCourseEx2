@@ -43,19 +43,24 @@ class Scheduler {
 
 
     void switchToThread(id_t tid) {
+      //validate tid in thread map
         int ret_val = sigsetjmp(thread_map[running].get_env(), 1);
         if (!ret_val) {
+            ready.push(running);
             running = tid;
             thread_map[running].run();
         }
     }
 
     int terminateThread(id_t tid) { // assumes that tid is positive
-        //validate that tid exists in thread_map @todo address case where thread commits suicide
+        //validate that tid exists in thread_map
+        if(running == tid){
+          switchToThread(ready.front());
+        }
         Thread to_kill = thread_map[tid];
         thread_map.erase(tid);
         delete &to_kill;
-        // @todo continue coding here
+
     }
 };
 
