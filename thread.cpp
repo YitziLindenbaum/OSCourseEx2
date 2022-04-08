@@ -38,7 +38,7 @@ void Thread::run(){
 }
 
 int Thread::die(){
-
+    return 0;
 }
 
 void Thread::set_state(State state){

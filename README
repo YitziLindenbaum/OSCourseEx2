@@ -22,11 +22,12 @@ which was handled by informing the shell that enter was pressed, and the shell t
 a system call to the OS, requesting that it send SIGTERM to the process whose ID we specified. The OS did so, and
 the application handled the signal SIGTERM by terminating itself (the default behavior).
 
-4. Virtual time is the amount of time that a process takes in theory -- without the interrupts and such that
-occur in real life. This is what we are calculating when we say, for example, that searching a hashmap takes O(1)
-times. Real time is the actual time that the processor took to execute a command, or a series of commands. For example,
-in Ex 1 when we calculated the amount of time that it takes to execute an empty function (in theory O(0) = 0), we were
-calculating real time.
+4. Virtual time is the amount of time that is spent executing a given process, whereas real time is
+the amount of actual time that passes from the execution of one command to the next (including other
+commands outside of the given process that the system performs).
+Virtual time is what is calculated when we say, for example, that searching a hashmap takes O(1)
+time. In Ex 1 when we calculated the amount of time that it takes to execute an empty function
+(in theory O(0) = 0), we were calculating real time.
 
 5. sigsetjmp saves the context of a thread in a sigjmp_buf struct -- the program counter, stack pointer, registers, and
 (optionally) the relevant signal masks.

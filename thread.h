@@ -5,7 +5,7 @@
 #ifndef EX2_THREAD_H
 #define EX2_THREAD_H
 
-#include <setjmp.h>;
+#include <setjmp.h>
 
 enum State {READY, RUNNING, BLOCKED};
 typedef unsigned int id_t;
