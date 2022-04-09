@@ -16,7 +16,7 @@ private:
     thread_entry_point initial_entry_point;
     char* initial_sp;
     State state;
-
+    int num_running_quantums;
     jmp_buf env;
 
 public:
@@ -38,7 +38,7 @@ public:
 
     jmp_buf &get_env();
 
-
+    int get_num_quantums();
 };
 
 

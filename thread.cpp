@@ -29,11 +29,13 @@ Thread::Thread(const unsigned int id, const thread_entry_point entry_point)
     sigsetjmp(env, 1);
     env[JB_SP] = translate_address(sp);
     env[JB_PC] = translate_address(pc);
+    num_running_quantums = 0;
     }
 
 Thread::~Thread(){ delete[] initial_sp; }
 
 void Thread::run(){
+    num_running_quantums ++;
     siglongjmp(env, 1);
 }
 
@@ -50,7 +52,9 @@ id_t Thread::get_id() const{
     return this->id;
     }
 
-
+int Thread::get_num_quantums(){
+  return num_running_quantums;
+}
 
 thread_entry_point Thread::get_init_entry_point() const{
     return this->initial_entry_point;
