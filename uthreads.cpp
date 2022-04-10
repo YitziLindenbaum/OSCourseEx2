@@ -12,259 +12,309 @@
 #include "uthreads.h"
 #include "thread.h"
 
-#define DEAD_THREAD "Thread does not exist"
-#define MAIN_THREAD_BLOCK "Main thread cannot be blocked"
+#define SYS_ERR "system error: "
+#define TIMER_ERR "failed to set timer"
+#define LIB_ERR "thread library error: "
+#define DEAD_THREAD LIB_ERR << "thread does not exist"
+#define MAIN_THREAD_BLOCK LIB_ERR << "main thread cannot be blocked"
+#define NON_POS LIB_ERR << "quantum must be a positive integer"
+#define NON_POS_NUMQ LIB_ERR << "Number of quantums must be a positive integer"
 #define MAIN_ID 0
 using namespace std;
 typedef unsigned int id_t;
 
 
-class Scheduler {
+class Scheduler
+{
     int quantum_usecs;
     int elapsed_quantums;
     list<id_t> ready;
     set<id_t> blocked;
     id_t running;
     set<id_t> available_ids;
+    map<id_t, int> sleeping;
     map<id_t, Thread> thread_map;
-    struct itimerval timer;
 
 public:
-    Scheduler(int quantum_usecs)
-    : quantum_usecs(quantum_usecs), running(0),elapsed_quantums(0)
+    Scheduler(int quantum_usecs, struct itimerval &timer)
+            : quantum_usecs(quantum_usecs), running(0), elapsed_quantums(0) // elapsed_quantums should be 1 at start?
     {
-        for (id_t i = 1; i < MAX_THREAD_NUM; ++i) {available_ids.insert(i);}
+        for (id_t i = 1; i < MAX_THREAD_NUM; ++i)
+        { available_ids.insert(i); }
         // @todo set thread_map[0] to be main thread
         //Thread main_thread(0, NULL);
-       // thread_map.emplace(0, main_thread);
+        // thread_map.emplace(0, main_thread);
 
         timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
         timer.it_value.tv_sec = quantum_usecs % 1000000;
         timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
         timer.it_interval.tv_sec = quantum_usecs % 1000000;
-        setitimer(ITIMER_VIRTUAL, &timer, NULL);
+        if (setitimer(ITIMER_VIRTUAL, &timer, NULL) < 0) {
+            std::cerr << TIMER_ERR << std::endl;
+            exit(1);
+        }
     }
 
-    ~Scheduler()= default;
+    ~Scheduler() = default;
+    /*
+    ~Scheduler() {
+        delete &thread_map.at(0);
+    };
+    */
 
-
-    int spawn(thread_entry_point entry_point) {
-        if (entry_point == nullptr){
-          return -1;
+    int spawn(thread_entry_point entry_point)
+    {
+        if (entry_point == nullptr)
+        {
+            return -1;
         }
-        if (available_ids.empty()) {
+        if (available_ids.empty())
+        {
             return -1; // maximum number of threads exceeded
         }
 
         id_t next_id = *(available_ids.begin());
-        char* stack = new char[STACK_SIZE];
+        char *stack = new char[STACK_SIZE];
         Thread new_thread(next_id, entry_point);
         ready.push_back(next_id);
         thread_map.emplace(next_id, new_thread);
         return next_id;
     }
 
-    bool is_alive(id_t tid){
+    bool is_alive(id_t tid)
+    {
         return thread_map.count(tid); // 1 if alive, 0 if not
     }
 
 
-    int terminate_thread(id_t tid) { // assumes that tid is positive
-        if (!is_alive(tid)) {
+    int terminate_thread(id_t tid)
+    { // assumes that tid is positive
+        if (!is_alive(tid))
+        {
             std::cerr << DEAD_THREAD << std::endl;
             return -1;
         }
-        Thread& to_kill = thread_map.at(tid);
+
+        Thread &to_kill = thread_map.at(tid);
         thread_map.erase(tid);
         blocked.erase(tid);
-        ready.remove(tid);
+        ready.remove(tid); // this may not be necessary since we check if the next ready thread is alive anyway, and
+        // searching a linked list is inefficient
         delete &to_kill;
 
-        if(running == tid){
-          running = ready.front();
-          ready.pop_front();
-          thread_map[running].run();
-          thread_map[running].set_state(RUNNING);
+        if (running == tid) // @todo can replace with call to switch_to_next?
+        {
+            running = ready.front();
+            ready.pop_front();
+            thread_map.at(running).set_state(RUNNING);
+            thread_map.at(running).run();
         }
         return 0;
     }
 
-    int switch_to_next() {
+    void switch_to_next(bool add_to_ready=false)
+    {
         /**
          * @brief: switches to next thread in READY and removes it from READY
-         * @return 0 upon success, -1 upon failure
-         * @todo what if READY is empty? (answer: if READY is empty, then the main thread is running. So should not happen
+         * @param add_to_ready - should running thread be pushed to back of ready?
          */
-        if (ready.empty()){return 0;} // main thread is running and ready is empty - continue running
 
-        id_t to_switch = ready.front();
-        ready.pop_front();
-        //@todo check if necessary because there should not be a dead thread in the ready queue.
-        // (if does, it probably our mistake and not hte user's, so we dont need to use cerr.
-        if (!is_alive(to_switch)){
-            std:cerr << DEAD_THREAD << std::endl;
-            return -1;
-        }
+        if (ready.empty())
+        { return; } // main thread is running and ready is empty - continue running
 
-        if (!blocked.count(running)) { // make sure current thread has not just blocked itself
+        id_t to_switch;
+        do { // pop from READY until a live thread is found
+            to_switch = ready.front();
+            ready.pop_front();
+        } while(!is_alive(to_switch));
+
+
+        if (add_to_ready) // place running thread in READY iff it has not just blocked itself
+        {
             ready.push_back(running);
-            thread_map[running].set_state(READY);
+            thread_map.at(running).set_state(READY);
         }
 
-        if (is_alive(running)) { // save state of current thread before switching
+        if (is_alive(running))
+        { // save state of current thread before switching
             int ret_val = sigsetjmp(thread_map.at(running).get_env(), 1);
-            if (ret_val) {return 0;}
+            if (ret_val)
+            { return; }
         }
 
         running = to_switch;
-        thread_map[running].run();
-        thread_map[running].set_state(RUNNING);
-        return 0;
+        thread_map.at(running).set_state(RUNNING);
+        thread_map.at(running).run();
 
     }
 
-    int block(id_t tid) {
-        if (!is_alive(tid)) {
+    int block(id_t tid)
+    {
+        if (!is_alive(tid))
+        {
             std::cerr << DEAD_THREAD << std::endl;
             return -1;
         }
-        if (tid == MAIN_ID) {
+        if (tid == MAIN_ID)
+        {
             std::cerr << MAIN_THREAD_BLOCK << std::endl;
             return -1;
         }
         ready.remove(tid);
         blocked.insert(tid);
-        thread_map[running].set_state(BLOCKED);
-        if (tid == running) {
-            return switch_to_next(); // this probably shouldn't return (since it doesn't affect whether block is successful)
-            // probably better to somehow perform check...
+        thread_map.at(running).set_state(BLOCKED);
+        if (tid == running)
+        {
+            switch_to_next();
         }
         return 0;
     }
 
-    int resume (id_t tid) {
-        if (!is_alive(tid)) {
+    int resume(id_t tid)
+    {
+        if (!is_alive(tid))
+        {
             std::cerr << DEAD_THREAD << std::endl;
             return -1;
         }
-      // if not in blocked, tid is either in READY or RUNNING and func should have no effect
-        if (blocked.count(tid)) {
+        // if not in blocked, tid is either in READY or RUNNING and func should have no effect
+        if (blocked.count(tid))
+        {
             blocked.erase(tid);
-            ready.push_back(tid);
-            thread_map[running].set_state(READY);
+            if (!sleeping.count(tid)) {
+                ready.push_back(tid);
+                thread_map.at(tid).set_state(READY);
+            }
         }
         return 0;
     }
 
-    int sleep(int num_quantum){
+    int sleep(int num_quantums)
+    {
+        if (num_quantums <= 0) {
+            std::cerr << NON_POS_NUMQ << std::endl;
+            return -1;
+        }
+        if (running == MAIN_ID) {
+            std::cerr << MAIN_THREAD_BLOCK << std::endl;
+            return -1;
+        }
 
+        sleeping.emplace(running, num_quantums);
+        switch_to_next();
+        return 0;
     }
 
-    id_t get_running_id(){
+    void update_and_wake() { // must be called by timer handler
+        for (auto it = sleeping.begin(); it != sleeping.end(); ++it) {
+            id_t tid = it->first;
+            if (--sleeping[tid] == 0) {
+                sleeping.erase(tid);
+                if (is_alive(tid) && !(blocked.count(tid))) {
+                    ready.push_back(tid);
+                    thread_map.at(tid).set_state(READY);
+                }
+            }
+        }
+    }
+
+    id_t get_running_id()
+    {
         return running;
     }
 
-    int get_quatums(){
-      return elapsed_quantums;
+    int get_quantums()
+    {
+        return elapsed_quantums;
     }
 
-    Thread get_thread(id_t tid){
-      if(!thread_map.count(tid)){
+    Thread get_thread(id_t tid)
+    {
+        if (!thread_map.count(tid))
+        {
 
-      }
-      return thread_map[tid];
+        }
+        return thread_map.at(tid);
     }
 
 
 };
 
 
+struct itimerval timer;
+static Scheduler* scheduler;
 
-
-
-static Scheduler scheduler = NULL;
-
-
-
-int uthread_init(int quantum_usecs){
-  if(quantum_usecs <= 0){
-    return -1;
-  }
-  scheduler = Scheduler(quantum_usecs);
-  return 0;
-}
-
-int uthread_spawn(thread_entry_point entry_point){
-  return scheduler.spawn(entry_point);
-}
-
-int uthread_terminate(int tid){
-  if(tid == 0){
-    delete &scheduler;
-    exit(0);
-  }
-  return scheduler.terminate_thread(tid);
-}
-
-int uthread_block(int tid){
-  return scheduler.block(tid);
-}
-
-int uthread_resume(int tid){
-  return scheduler.resume(tid);
-}
-
-int uthread_sleep(int num_quantums){
-
-}
-
-int uthread_get_tid(){
-
-}
-
-int uthread_get_total_quantums(){
-  return scheduler.get_quatums();
-}
-
-int uthread_get_quantums(int tid){
-
-  return scheduler.get_thread(tid).get_num_quantums();
+int uthread_init(int quantum_usecs)
+{
+    if (quantum_usecs <= 0)
+    {
+        std::cerr << NON_POS << std::endl;
+        return -1;
+    }
+    scheduler = new Scheduler(quantum_usecs, timer);
+    return 0;
 }
 
 
+int uthread_spawn(thread_entry_point entry_point)
+{
+    return scheduler->spawn(entry_point);
+}
 
+int uthread_terminate(int tid)
+{
+    if (tid == 0)
+    {
+        delete scheduler;
+        exit(0);
+    }
+    return scheduler->terminate_thread(tid);
+}
 
+int uthread_block(int tid)
+{
+    return scheduler->block(tid);
+}
 
+int uthread_resume(int tid)
+{
+    return scheduler->resume(tid);
+}
 
+int uthread_sleep(int num_quantums)
+{
+    return scheduler->sleep(num_quantums);
+}
 
+int uthread_get_tid()
+{
+    return scheduler->get_running_id();
+}
 
+int uthread_get_total_quantums()
+{
+    return scheduler->get_quantums();
+}
 
+int uthread_get_quantums(int tid)
+{
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    return scheduler->get_thread(tid).get_num_quantums();
+}
 
 
 int gotit = 0;
 
-void timer_handler(int sig) {
+void timer_handler(int sig)
+{
     gotit = 1;
     std::cout << "Caught the timer" << std::endl;
 }
 
-int main() {
+int main()
+{
     struct sigaction sa = {0};
+    struct itimerval timer;
 
     // Install timer_handler as the signal handler for SIGVTALRM.
     sa.sa_handler = &timer_handler;
@@ -272,10 +322,21 @@ int main() {
     {
         printf("sigaction error.");
     }
-    Scheduler scheduler = Scheduler(100);
-    for(;;){
-        if (gotit) {
+    int quantum_usecs = 100;
+    timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
+    timer.it_value.tv_usec = quantum_usecs % 1000000;
+    timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
+    timer.it_interval.tv_usec = quantum_usecs % 1000000;
+    if (setitimer(ITIMER_VIRTUAL, &timer, NULL)) {
+        std::cerr << TIMER_ERR << std::endl;
+        exit(1);
+    }
+    for (;;)
+    {
+        if (gotit)
+        {
             std::cout << "got it" << std::endl;
+            gotit = 0;
         }
     }
 }
