@@ -13,7 +13,8 @@
 #include "thread.h"
 
 #define SYS_ERR "system error: "
-#define TIMER_ERR "failed to set timer"
+#define TIMER_ERR SYS_ERR << "failed to set timer"
+#define SIGNAL_ERR SYS_ERR << "failed to set signal handler"
 #define LIB_ERR "thread library error: "
 #define DEAD_THREAD LIB_ERR << "thread does not exist"
 #define MAIN_THREAD_BLOCK LIB_ERR << "main thread cannot be blocked"
@@ -36,23 +37,14 @@ class Scheduler
     map<id_t, Thread> thread_map;
 
 public:
-    Scheduler(int quantum_usecs, struct itimerval &timer)
+    Scheduler(int quantum_usecs)
             : quantum_usecs(quantum_usecs), running(0), elapsed_quantums(0) // elapsed_quantums should be 1 at start?
     {
         for (id_t i = 1; i < MAX_THREAD_NUM; ++i)
         { available_ids.insert(i); }
-        // @todo set thread_map[0] to be main thread
-        //Thread main_thread(0, NULL);
-        // thread_map.emplace(0, main_thread);
+        Thread main_thread(0, NULL);
+        thread_map.emplace(0, main_thread);
 
-        timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
-        timer.it_value.tv_sec = quantum_usecs % 1000000;
-        timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
-        timer.it_interval.tv_sec = quantum_usecs % 1000000;
-        if (setitimer(ITIMER_VIRTUAL, &timer, NULL) < 0) {
-            std::cerr << TIMER_ERR << std::endl;
-            exit(1);
-        }
     }
 
     ~Scheduler() = default;
@@ -240,6 +232,34 @@ public:
 
 };
 
+void setup_timer(int quantum_usecs, struct itimerval &timer) {
+    timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
+    timer.it_value.tv_usec = quantum_usecs % 1000000;
+    timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
+    timer.it_interval.tv_usec = quantum_usecs % 1000000;
+    if (setitimer(ITIMER_VIRTUAL, &timer, NULL)) {
+        std::cerr << TIMER_ERR << std::endl;
+        exit(1);
+    }
+}
+
+void timer_handler(int sig)
+{
+    std::cout << "Caught the timer" << std::endl;
+}
+
+void setup_handler(){
+    struct sigaction sa = {0};
+
+    // Install timer_handler as the signal handler for SIGVTALRM.
+    sa.sa_handler = &timer_handler;
+    if (sigaction(SIGVTALRM, &sa, NULL) < 0)
+    {
+        std::cerr << SIGNAL_ERR << std:endl;
+        exit(1);
+    }
+}
+
 
 struct itimerval timer;
 static Scheduler* scheduler;
@@ -251,7 +271,9 @@ int uthread_init(int quantum_usecs)
         std::cerr << NON_POS << std::endl;
         return -1;
     }
-    scheduler = new Scheduler(quantum_usecs, timer);
+    setup_timer(quantum_usecs, timer);
+    setup_handler();
+    scheduler = new Scheduler(quantum_usecs);
     return 0;
 }
 
@@ -303,41 +325,15 @@ int uthread_get_quantums(int tid)
 }
 
 
-int gotit = 0;
 
-void timer_handler(int sig)
-{
-    gotit = 1;
-    std::cout << "Caught the timer" << std::endl;
-}
+
 
 int main()
 {
-    struct sigaction sa = {0};
-    struct itimerval timer;
 
-    // Install timer_handler as the signal handler for SIGVTALRM.
-    sa.sa_handler = &timer_handler;
-    if (sigaction(SIGVTALRM, &sa, NULL) < 0)
-    {
-        printf("sigaction error.");
-    }
-    int quantum_usecs = 100;
-    timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
-    timer.it_value.tv_usec = quantum_usecs % 1000000;
-    timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
-    timer.it_interval.tv_usec = quantum_usecs % 1000000;
-    if (setitimer(ITIMER_VIRTUAL, &timer, NULL)) {
-        std::cerr << TIMER_ERR << std::endl;
-        exit(1);
-    }
     for (;;)
     {
-        if (gotit)
-        {
-            std::cout << "got it" << std::endl;
-            gotit = 0;
-        }
+
     }
 }
 
