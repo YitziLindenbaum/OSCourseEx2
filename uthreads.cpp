@@ -13,7 +13,7 @@
 #include "thread.h"
 
 #define SYS_ERR "system error: "
-#define TIMER_ERR "failed to set timer"
+#define TIMER_ERR SYS_ERR << "failed to set timer"
 #define LIB_ERR "thread library error: "
 #define DEAD_THREAD LIB_ERR << "thread does not exist"
 #define MAIN_THREAD_BLOCK LIB_ERR << "main thread cannot be blocked"
@@ -37,7 +37,7 @@ class Scheduler
 
 public:
     Scheduler(int quantum_usecs, struct itimerval &timer)
-            : quantum_usecs(quantum_usecs), running(0), elapsed_quantums(0) // elapsed_quantums should be 1 at start?
+            : quantum_usecs(quantum_usecs), running(0), elapsed_quantums(1)
     {
         for (id_t i = 1; i < MAX_THREAD_NUM; ++i)
         { available_ids.insert(i); }
@@ -45,10 +45,10 @@ public:
         //Thread main_thread(0, NULL);
         // thread_map.emplace(0, main_thread);
 
-        timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
-        timer.it_value.tv_sec = quantum_usecs % 1000000;
+        timer.it_value.tv_sec = quantum_usecs / (int) 1000000; // num of seconds
+        timer.it_value.tv_usec = quantum_usecs % 1000000; // num of microsec
         timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
-        timer.it_interval.tv_sec = quantum_usecs % 1000000;
+        timer.it_interval.tv_usec = quantum_usecs % 1000000;
         if (setitimer(ITIMER_VIRTUAL, &timer, NULL) < 0) {
             std::cerr << TIMER_ERR << std::endl;
             exit(1);
@@ -88,7 +88,7 @@ public:
 
 
     int terminate_thread(id_t tid)
-    { // assumes that tid is positive
+    {
         if (!is_alive(tid))
         {
             std::cerr << DEAD_THREAD << std::endl;
@@ -98,17 +98,17 @@ public:
         Thread &to_kill = thread_map.at(tid);
         thread_map.erase(tid);
         blocked.erase(tid);
-        ready.remove(tid); // this may not be necessary since we check if the next ready thread is alive anyway, and
-        // searching a linked list is inefficient
+        ready.remove(tid);
         delete &to_kill;
 
-        if (running == tid) // @todo can replace with call to switch_to_next?
+        if (running == tid)
         {
             running = ready.front();
             ready.pop_front();
             thread_map.at(running).set_state(RUNNING);
             thread_map.at(running).run();
         }
+        available_ids.insert(tid);
         return 0;
     }
 
@@ -200,7 +200,7 @@ public:
             return -1;
         }
 
-        sleeping.emplace(running, num_quantums);
+        sleeping.emplace(running, num_quantums + 1);
         switch_to_next();
         return 0;
     }
@@ -303,12 +303,16 @@ int uthread_get_quantums(int tid)
 }
 
 
+
+
+
+
 int gotit = 0;
 
 void timer_handler(int sig)
 {
     gotit = 1;
-    std::cout << "Caught the timer" << std::endl;
+    std::cout << "Caught the timer" << std::endl; // change to scheduling functions
 }
 
 int main()
