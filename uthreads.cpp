@@ -106,11 +106,6 @@ public:
 
     void switch_to_next(bool add_to_ready=false)
     {
-        /**
-         * @brief: switches to next thread in READY and removes it from READY
-         * @param add_to_ready - should running thread be pushed to back of ready?
-         */
-
         if (ready.empty())
         { return; } // main thread is running and ready is empty - continue running
 
@@ -232,6 +227,7 @@ public:
 
 };
 
+
 void setup_timer(int quantum_usecs, struct itimerval &timer) {
     timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
     timer.it_value.tv_usec = quantum_usecs % 1000000;
@@ -336,24 +332,3 @@ int main()
 
     }
 }
-
-
-/*
-map<unsigned int, Thread> *thread_map = new map<unsigned int, Thread>();
-//thread_map[0] = new Thread(0, );
-
-int uthread_init(int quantum_usecs) {
-    return 0;
-}
-
-int uthread_spawn(thread_entry_point entry_point) {
-    unsigned int new_id;
-    thread_map[new_id] = new Thread(new_id, entry_point, )
-    return 0;
-}
-
-int uthread_terminate(int tid) {
-    return 0;
-}
- */
-
