@@ -215,25 +215,29 @@ public:
         return elapsed_quantums;
     }
 
-    Thread get_thread(id_t tid)
+    Thread* get_thread(id_t tid)
     {
-        if (!thread_map.count(tid))
-        {
-
-        }
-        return thread_map.at(tid);
+      if (!is_alive(tid))
+      {
+        std::cerr << DEAD_THREAD << std::endl;
+        return nullptr;
+      }
+        return &(thread_map.at(tid));
     }
 
 
 };
 
 
-void setup_timer(int quantum_usecs, struct itimerval &timer) {
-    timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
-    timer.it_value.tv_usec = quantum_usecs % 1000000;
-    timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
-    timer.it_interval.tv_usec = quantum_usecs % 1000000;
-    if (setitimer(ITIMER_VIRTUAL, &timer, NULL)) {
+struct itimerval timer;
+static Scheduler* scheduler;
+
+void setup_timer(int quantum_usecs, struct itimerval &_timer) {
+  _timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
+  _timer.it_value.tv_usec = quantum_usecs % 1000000;
+  _timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
+  _timer.it_interval.tv_usec = quantum_usecs % 1000000;
+    if (setitimer(ITIMER_VIRTUAL, &_timer, NULL)) {
         std::cerr << TIMER_ERR << std::endl;
         exit(1);
     }
@@ -241,7 +245,10 @@ void setup_timer(int quantum_usecs, struct itimerval &timer) {
 
 void timer_handler(int sig)
 {
-    std::cout << "Caught the timer" << std::endl;
+    //std::cout << "Caught the timer" << std::endl;
+    scheduler->update_and_wake();
+    scheduler->switch_to_next();
+
 }
 
 void setup_handler(){
@@ -251,14 +258,11 @@ void setup_handler(){
     sa.sa_handler = &timer_handler;
     if (sigaction(SIGVTALRM, &sa, NULL) < 0)
     {
-        std::cerr << SIGNAL_ERR << std:endl;
+        std::cerr << SIGNAL_ERR << std::endl;
         exit(1);
     }
 }
 
-
-struct itimerval timer;
-static Scheduler* scheduler;
 
 int uthread_init(int quantum_usecs)
 {
@@ -317,7 +321,7 @@ int uthread_get_total_quantums()
 int uthread_get_quantums(int tid)
 {
 
-    return scheduler->get_thread(tid).get_num_quantums();
+    return scheduler->get_thread(tid)->get_num_quantums();
 }
 
 
