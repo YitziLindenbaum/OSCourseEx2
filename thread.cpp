@@ -2,6 +2,7 @@
 
 #include "uthreads.h"
 #include "thread.h"
+#include <signal.h>
 
 
 //==================== macros ================
@@ -35,6 +36,7 @@ Thread::Thread(const unsigned int id, const thread_entry_point entry_point)
     sigsetjmp(env, 1);
     (env->__jmpbuf)[JB_SP] = translate_address(sp);
     (env->__jmpbuf)[JB_PC] = translate_address(pc);
+    sigemptyset(&env->__saved_mask);
     num_running_quantums = 0;
     }
 
@@ -54,7 +56,7 @@ void Thread::set_state(State new_state)
 {this->state = new_state;}
 
 
-id_t Thread::get_id() const
+tid_t Thread::get_id() const
 {return this->id;}
 
 
