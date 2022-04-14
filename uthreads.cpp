@@ -224,7 +224,7 @@ public:
             return -1;
         }
 
-        sleeping.emplace(running, num_quantums);
+        sleeping.emplace(running, num_quantums + 1);
         thread_map.at(running)->set_state(SLEEPING);
         reset_timer();
         switch_to_next();
