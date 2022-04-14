@@ -225,7 +225,7 @@ public:
         }
 
         sleeping.emplace(running, num_quantums);
-        thread_map[running]->set_state(SLEEPING);
+        thread_map.at(running)->set_state(SLEEPING);
         reset_timer();
         switch_to_next();
         return 0;
@@ -233,14 +233,17 @@ public:
 
 
     void update_and_wake() { // must be called by timer handler
-        for (auto it = sleeping.begin(); it != sleeping.end(); ++it) {
+        for (auto it = sleeping.begin(); it != sleeping.end();) {
             id_t tid = it->first;
-            if (--(sleeping[tid]) == 0) {
-                sleeping.erase(tid);
+            if (--(sleeping.at(tid)) == 0) {
+                sleeping.erase(it++);
                 if (is_alive(tid) && !(blocked.count(tid))) {
                     ready.push_back(tid);
                     thread_map.at(tid)->set_state(READY);
                 }
+            }
+            else {
+                ++it;
             }
         }
     }

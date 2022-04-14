@@ -215,8 +215,8 @@ void basic_sleep_check(){
     quantums_to_run(10);
     printf("uthread_terminate id 0");
     uthread_terminate(uthread_get_tid());
-//    int a=  uthread_spawn (thread1_sleep_check);
-//    int b = uthread_spawn (thread2_sleep_check);
+    int a=  uthread_spawn (thread1_sleep_check);
+    int b = uthread_spawn (thread2_sleep_check);
 }
 /*
 the current Quantum is : 1
