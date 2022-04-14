@@ -175,7 +175,6 @@ void thread1_sleep_block_before_wakeup(){
           int before = uthread_get_total_quantums();
           uthread_sleep(20);
           std::cout << "thread 1 is awake, it was out for " << uthread_get_total_quantums() - before << " quantums" << std::endl;
-          std::cout.flush();
         }
     }
   uthread_terminate (1);
@@ -373,15 +372,15 @@ int main ()
   sleep_threads_test();
 
   std::cout << std::endl << "Test 4" << std::endl;
-  test_block_sleeping_before_wakeup();*/
+  test_block_sleeping_before_wakeup();
 
   std::cout << std::endl << "Test 5" << std::endl;
-  test_block_sleeping_after_wakeup();
+  test_block_sleeping_after_wakeup();*/
 
   /*std::cout << std::endl << "Test 6" << std::endl;
-  test_thread_id_management();
+  test_thread_id_management();*/
 
-  std::cout << std::endl << "Test 7" << std::endl;
+  /*std::cout << std::endl << "Test 7" << std::endl;
   test_5_threads();
 
   std::cout << std::endl << "Test 8" << std::endl;

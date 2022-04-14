@@ -202,7 +202,7 @@ public:
             switch_to_next();
         }
 
-        std::cout <<"@@@" << tid << " blocked in the " << elapsed_quantums << " quantum" << endl;
+        //std::cout <<"@@@" << tid << " blocked in the " << elapsed_quantums << " quantum" << endl;
 
         UNBLOCK_TIMER;
         return 0;
@@ -228,7 +228,7 @@ public:
             }
         }
 
-        std::cout <<"@@@" << tid << " resumed in the " << elapsed_quantums << " quantum" << endl;
+        //std::cout <<"@@@" << tid << " resumed in the " << elapsed_quantums << " quantum" << endl;
 
         UNBLOCK_TIMER;
         return 0;
@@ -252,7 +252,7 @@ public:
         sleeping.emplace(running, num_quantums + 1);
         thread_map.at(running)->set_state(SLEEPING);
 
-        std::cout <<"@@@" << running << "  went to sleep for: " << num_quantums << " in the " << elapsed_quantums << " quantum" << endl;
+        //std::cout <<"@@@" << running << "  went to sleep for: " << num_quantums << " in the " << elapsed_quantums << " quantum" << endl;
 
         UNBLOCK_TIMER;
         reset_timer();
@@ -265,12 +265,12 @@ public:
         for (auto it = sleeping.begin(); it != sleeping.end();) {
             tid_t tid = it->first;
 
-            std::cout <<"@@@" << tid << " has " << sleeping.at(tid) << " quantums left to sleep " << "currently " <<  elapsed_quantums << " quantum" << endl;
+            //std::cout <<"@@@" << tid << " has " << sleeping.at(tid) << " quantums left to sleep " << "currently " <<  elapsed_quantums << " quantum" << endl;
 
             if (--(sleeping.at(tid)) == 0) {
                 sleeping.erase(it++);
 
-                std::cout <<"@@@" << tid << "  woke up in the " << elapsed_quantums << " quantum" << endl;
+                //std::cout <<"@@@" << tid << "  woke up in the " << elapsed_quantums << " quantum" << endl;
 
                 if (is_alive(tid) && !(blocked.count(tid))) {
                     ready.push_back(tid);
