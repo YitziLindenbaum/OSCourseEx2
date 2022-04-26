@@ -1,3 +1,8 @@
+/*
+ * Authors: Yitzchak Lindenbaum and Elay Aharoni
+ * 14.04.2022
+ */
+
 
 //======================= includes ======================
 
@@ -6,9 +11,10 @@
 #include <set>
 #include <map>
 #include <iostream>
-#include "stdlib.h"
+#include <stdlib.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <errno.h>
 #include "uthreads.h"
 #include "thread.h"
 
@@ -27,20 +33,29 @@
 #define MAX_THREAD_EXCEEDED LIB_ERR << "Maximum number of threads exceeded"
 #define NULL_ENTRY_POINT LIB_ERR << "entry point cannot be null"
 #define MAIN_ID 0
-#define BLOCK_TIMER sigprocmask(SIG_BLOCK, &(handler).sa_mask, NULL)
-#define UNBLOCK_TIMER sigprocmask(SIG_UNBLOCK, &(handler).sa_mask, NULL)
+#define ERR_EXIT_CODE
+#define BLOCK_TIMER if (sigprocmask(SIG_BLOCK, &(handler).sa_mask, NULL) < 0) { \
+                            std::cerr << SIGNAL_ERR << std::endl; \
+                            uthread_terminate(MAIN_ID); \
+                            }
+#define UNBLOCK_TIMER if (sigprocmask(SIG_UNBLOCK, &(handler).sa_mask, NULL) < 0) { \
+                            std::cerr << SIGNAL_ERR << std::endl; \
+                            uthread_terminate(MAIN_ID); \
+                            }
 
 using namespace std;
 typedef int tid_t;
 
 
-//====================== the scheduler ==================
+//====================== Scheduler class ==================
 
 void timer_handler(int sig);
 
+/**
+ * Class to represent scheduler object -- handles multi-thread programming using RR algorithm.
+ */
 class Scheduler
 {
-    int quantum_usecs;
     int elapsed_quantums;
     list<tid_t> ready;
     set<tid_t> blocked;
@@ -49,34 +64,49 @@ class Scheduler
     map<tid_t, int> sleeping;
     map<tid_t, Thread*> thread_map;
     struct itimerval timer;
-    struct sigaction handler = {0};
+    struct sigaction handler = {{0}};
+
+private:
+    /**
+     * Indicates whether the given thread id belongs to a live thread
+     * @param tid
+     * @return true if alive, false otherwise
+     */
+    bool is_alive(tid_t tid)
+    {return thread_map.count(tid);}
 
 public:
 
-
+    /**
+     * Construct new Scheduler object (should be called once per program)
+     * @param quantum_usecs Number of microseconds that should be considered a quantum. Must be positive.
+     */
     Scheduler(int quantum_usecs)
-            : quantum_usecs(quantum_usecs), running(0), elapsed_quantums(0)
+            : elapsed_quantums(0), running(MAIN_ID)
     {
+        // setup available id's set
         for (tid_t i = 0; i < MAX_THREAD_NUM; ++i)
         { available_ids.insert(i); }
-        Thread* main_thread = new Thread(*(available_ids.begin()), nullptr);
-        available_ids.erase(available_ids.begin());
-        thread_map.emplace(0, main_thread);
-        ready.push_back(0);
-        switch_to_next();
-        setup_handler();
-        setup_timer();
-    }
 
+        // setup main thread
+        Thread* main_thread = new Thread(MAIN_ID, nullptr);
+        available_ids.erase(available_ids.begin());
+        thread_map.emplace(MAIN_ID, main_thread);
+        ready.push_back(MAIN_ID); // necessary for technical reasons
+        switch_to_next();
+
+        // setup timer-handler and start timer
+        setup_handler();
+        setup_timer(quantum_usecs);
+    }
 
     ~Scheduler() = default;
 
-    /*~Scheduler() {
-        delete &thread_map.at(0);
-    };*/
-
-
-
+    /**
+     * Create a new thread and place it in back of READY queue
+     * @param entry_point pointer to function from which to start thread
+     * @return 0 on success, -1 on failure
+     */
     tid_t spawn(thread_entry_point entry_point)
     {
         BLOCK_TIMER;
@@ -88,32 +118,34 @@ public:
 
         if (available_ids.empty())
         {
-            std::cerr << MAX_THREAD_EXCEEDED << std::endl;
             UNBLOCK_TIMER;
+            std::cerr << MAX_THREAD_EXCEEDED << std::endl;
             return -1;
         }
 
-        tid_t next_id = *(available_ids.begin());
+        tid_t next_id = *(available_ids.begin()); // ordered set keeps minimal value at beginning
         available_ids.erase(available_ids.begin());
         Thread* new_thread = new Thread(next_id, entry_point);
         thread_map.emplace(next_id, new_thread);
         ready.push_back(next_id);
+
         UNBLOCK_TIMER;
+
         return next_id;
     }
 
-
-    bool is_alive(tid_t tid)
-    {return thread_map.count(tid);}
-
-
+    /**
+     * Terminates the thread with the given id
+     * @param tid
+     * @return 0 upon sucess, -1 on failure
+     */
     int terminate_thread(tid_t tid)
     { // assumes that tid is positive
         BLOCK_TIMER;
         if (!is_alive(tid))
         {
-            std::cerr << DEAD_THREAD << std::endl;
             UNBLOCK_TIMER;
+            std::cerr << DEAD_THREAD << std::endl;
             return -1;
         }
 
@@ -122,43 +154,46 @@ public:
         blocked.erase(tid);
         ready.remove(tid);
         delete to_kill;
-        available_ids.insert(tid);
 
-        if (running == tid)
+        available_ids.insert(tid); // add id back into set so it can be reused
+
+        if (running == tid) // thread is committing suicide
         {
             UNBLOCK_TIMER;
-            reset_timer();
+            start_new_quantum();
             switch_to_next();
         }
-
-        //std::cout << tid << " was killed in the " << elapsed_quantums << " quantum" << endl;
 
         UNBLOCK_TIMER;
         return 0;
     }
 
 
+    /**
+     * Switches to the next running thread in READY.
+     * @param add_to_ready Should scheduler place the calling thread in the back end of READY?
+     */
     void switch_to_next(bool add_to_ready=false)
     {
-        if (ready.empty())
+        if (ready.empty()) // the main thread is calling, there are no more ready threads. Func has no effect.
         {return;}
 
         BLOCK_TIMER;
         tid_t to_switch;
-        do { // #todo: check,,,,,, pop from READY until a live thread is found
+        do { // pop from READY until an unblocked one is found
             to_switch = ready.front();
             ready.pop_front();
-        } while(!is_alive(to_switch));
+            if (ready.empty()) {break;} // all threads but at most 1 in ready list were blocked
+        } while(blocked.count(to_switch));
+        if (blocked.count(to_switch)) {return;} // all threads were blocked - func has no effect
 
-
-        if (add_to_ready) // place running thread in READY iff it has not just blocked itself
+        if (add_to_ready) // condition entered only when switch happens because of timer
         {
             ready.push_back(running);
-            thread_map.at(running)->set_state(READY);
         }
 
         if (is_alive(running))
-        { // save state of current thread before switching
+        { // save state of current thread before switching (unless switching because thread has committed suicide)
             int ret_val = sigsetjmp(thread_map.at(running)->get_env(), 1);
             if (ret_val)
             {
@@ -167,16 +202,18 @@ public:
             }
         }
 
-        //std::cout << "swiched between " << running << " to " << to_switch << " in the " << elapsed_quantums << " quantum" << endl;
-
         running = to_switch;
-        thread_map.at(running)->set_state(RUNNING);
         UNBLOCK_TIMER;
         thread_map.at(running)->run();
 
     }
 
 
+    /**
+     * Block thread with given id
+     * @param tid
+     * @return 0 on success, -1 on failure
+     */
     int block(tid_t tid)
     {
         BLOCK_TIMER;
@@ -186,29 +223,32 @@ public:
             UNBLOCK_TIMER;
             return -1;
         }
+
         if (tid == MAIN_ID)
         {
             std::cerr << MAIN_THREAD_BLOCK << std::endl;
             UNBLOCK_TIMER;
             return -1;
         }
-        ready.remove(tid);
+
         blocked.insert(tid);
-        thread_map.at(running)->set_state(BLOCKED);
-        if (tid == running)
+        if (tid == running) // thread blocked itself
         {
             UNBLOCK_TIMER;
-            reset_timer();
+            start_new_quantum();
             switch_to_next();
         }
-
-        //std::cout <<"@@@" << tid << " blocked in the " << elapsed_quantums << " quantum" << endl;
 
         UNBLOCK_TIMER;
         return 0;
     }
 
 
+    /**
+     * Unblock thread with given id
+     * @param tid
+     * @return 0 on sucess, -1 on failure
+     */
     int resume(tid_t tid)
     {
         BLOCK_TIMER;
@@ -218,23 +258,25 @@ public:
             UNBLOCK_TIMER;
             return -1;
         }
-        // if not in blocked, tid is either in READY or RUNNING and func should have no effect
+        // if not in blocked, func should have no effect
         if (blocked.count(tid))
         {
             blocked.erase(tid);
             if (!sleeping.count(tid)) {
                 ready.push_back(tid);
-                thread_map.at(tid)->set_state(READY);
             }
         }
-
-        //std::cout <<"@@@" << tid << " resumed in the " << elapsed_quantums << " quantum" << endl;
 
         UNBLOCK_TIMER;
         return 0;
     }
 
 
+    /**
+     * Put running thread to sleep for given number of quantums
+     * @param num_quantums number of quantums to sleep for
+     * @return 0 on success, -1 on failure
+     */
     int sleep(int num_quantums)
     {
         BLOCK_TIMER;
@@ -243,38 +285,34 @@ public:
             UNBLOCK_TIMER;
             return -1;
         }
+
         if (running == MAIN_ID) {
             std::cerr << MAIN_THREAD_BLOCK << std::endl;
             UNBLOCK_TIMER;
             return -1;
         }
 
-        sleeping.emplace(running, num_quantums + 1);
-        thread_map.at(running)->set_state(SLEEPING);
-
-        //std::cout <<"@@@" << running << "  went to sleep for: " << num_quantums << " in the " << elapsed_quantums << " quantum" << endl;
+        sleeping.emplace(running, num_quantums + 1); // add 1 because the first quantum transition doesn't count
 
         UNBLOCK_TIMER;
-        reset_timer();
+        start_new_quantum();
         switch_to_next();
         return 0;
     }
 
 
+    /**
+     * Iterates over sleeping threads and updates them. Wakes them if it is time. To be called every time
+     * a new quantum begins.
+     */
     void update_and_wake() { // must be called by timer handler
         for (auto it = sleeping.begin(); it != sleeping.end();) {
             tid_t tid = it->first;
 
-            //std::cout <<"@@@" << tid << " has " << sleeping.at(tid) << " quantums left to sleep " << "currently " <<  elapsed_quantums << " quantum" << endl;
-
             if (--(sleeping.at(tid)) == 0) {
                 sleeping.erase(it++);
-
-                //std::cout <<"@@@" << tid << "  woke up in the " << elapsed_quantums << " quantum" << endl;
-
-                if (is_alive(tid) && !(blocked.count(tid))) {
-                    ready.push_back(tid);
-                    thread_map.at(tid)->set_state(READY);
+                if (is_alive(tid) && !(blocked.count(tid))) { // put awoken thread in READY iff it is alive and
+                    ready.push_back(tid);                      // not blocked
                 }
             }
             else {
@@ -284,14 +322,25 @@ public:
     }
 
 
+    /**
+     * @return id of currently running thread
+     */
     tid_t get_running_id() const
     {return running;}
 
 
+    /**
+     * @return total number of elapsed quantums
+     */
     int get_quantums() const
     {return elapsed_quantums;}
 
 
+    /**
+     * Get pointer of thread with given id
+     * @param tid
+     * @return pointer to thread, null if does not exist
+     */
     Thread* get_thread(tid_t tid)
     {
       if (!is_alive(tid))
@@ -303,46 +352,54 @@ public:
     }
 
 
-    void setup_timer() {
+    /**
+     * Initialize timer
+     * @param quantum_usecs amount of time to set timer to, in microseconds
+     */
+    void setup_timer(int quantum_usecs) {
         timer.it_value.tv_sec = quantum_usecs / (int) 1000000;
         timer.it_value.tv_usec = quantum_usecs % 1000000;
         timer.it_interval.tv_sec = quantum_usecs / (int) 1000000;
         timer.it_interval.tv_usec = quantum_usecs % 1000000;
-        reset_timer();
+        start_new_quantum();
     }
 
 
-    void reset_timer(){
+    /**
+     * Begin a new quantum. To be called when timer must be manually (re)set.
+     */
+    void start_new_quantum(){
         if (setitimer(ITIMER_VIRTUAL, &timer, nullptr)) {
             std::cerr << TIMER_ERR << std::endl;
-            exit(1);
+            uthread_terminate(MAIN_ID);
         }
-
-        //std::cout << "reset timer" << endl;
 
         elapsed_quantums++;
         update_and_wake();
     }
 
 
+    /**
+     * Initialize timer-signal handler
+     */
     void setup_handler(){
 
         handler.sa_handler = &timer_handler;
         if (sigaction(SIGVTALRM, &handler, nullptr) < 0)
         {
             std::cerr << SIGNAL_ERR << std::endl;
-            exit(1);
+            uthread_terminate(MAIN_ID);
         }
         sigemptyset(&(handler).sa_mask);
         sigaddset(&(handler).sa_mask, SIGVTALRM);
     }
 
 
+    /**
+     * Increase field tracking number of elapsed quantums by 1.
+     */
     void elapse_quantum(){elapsed_quantums++;}
 };
-
-
-
 
 
 //====================== uthread library ====================
@@ -350,18 +407,18 @@ public:
 
 Scheduler* scheduler;
 
-
+/**
+ * Function to be set as handler for timer signal
+ * @param sig
+ */
 void timer_handler(int sig)
 {
-
-    //std::cout << "caught the timer" << endl;
-
     scheduler->elapse_quantum();
     scheduler->update_and_wake();
     scheduler->switch_to_next(true);
-
 }
 
+/// See documentation for uthreads library in provided uthreads.h file
 int uthread_init(int quantum_usecs)
 {
     if (quantum_usecs <= 0)
@@ -383,7 +440,8 @@ int uthread_terminate(int tid)
     if (tid == 0)
     {
         delete scheduler;
-        exit(0);
+        if (!errno) {exit(0);}
+        else {exit(1);}
     }
     return scheduler->terminate_thread(tid);
 }

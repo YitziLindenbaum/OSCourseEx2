@@ -1,5 +1,14 @@
-chucklind,elayahroni
+chucklind,elayaharoni
+Yitzchak Lindenbaum (336082789), Elay Aharoni (315533968)
+Exercise 2
 
+FILES:
+uthreads.cpp -- Implementation of functions in provided header file. Also includes
+    Scheduler class.
+thread.h -- Header file for Thread class.
+thread.cpp -- Implementation of Thread class.
+Makefile
+README -- this file.
 
 
 QUESTIONS:

@@ -26,6 +26,11 @@ address_t translate_address(address_t addr)
 
 //================= thread implementation ==============
 
+/**
+ * Create new Thread object
+ * @param id
+ * @param entry_point
+ */
 Thread::Thread(const unsigned int id, const thread_entry_point entry_point)
     : id(id), initial_entry_point(entry_point)
     {
@@ -37,6 +42,7 @@ Thread::Thread(const unsigned int id, const thread_entry_point entry_point)
     (env->__jmpbuf)[JB_SP] = translate_address(sp);
     (env->__jmpbuf)[JB_PC] = translate_address(pc);
     sigemptyset(&env->__saved_mask);
+
     num_running_quantums = 0;
     }
 
@@ -44,34 +50,30 @@ Thread::Thread(const unsigned int id, const thread_entry_point entry_point)
 Thread::~Thread()
 { delete[] initial_sp;}
 
-
+/**
+ * Run thread.
+ */
 void Thread::run()
 {
     num_running_quantums ++;
     siglongjmp(env, 1);
 }
 
-
-void Thread::set_state(State new_state)
-{this->state = new_state;}
-
-
+/**
+ * Get id of thread
+ */
 tid_t Thread::get_id() const
 {return this->id;}
 
-
+/**
+ * @return number of quantums this thread has run
+ */
 int Thread::get_num_quantums() const
 {return num_running_quantums;}
 
-
-thread_entry_point Thread::get_init_entry_point() const
-{return this->initial_entry_point;}
-
-
-State Thread::get_state() const
-{return this->state;}
-
-
+/**
+ * @return jmp_buf object pertaining to this thread
+ */
 jmp_buf &Thread::get_env()
 {return this->env;}
 
